@@ -199,37 +199,13 @@ func (f *TextFormatter) Format(entry *Entry) ([]byte, error) {
 	if timestampFormat == "" {
 		timestampFormat = defaultTimestampFormat
 	}
-	if f.isColored() {
-		f.printColored(b, entry, keys, data, timestampFormat)
-	} else {
 
-		for _, key := range fixedKeys {
-			var value interface{}
-			switch {
-			case key == f.FieldMap.resolve(FieldKeyTime):
-				value = entry.Time.Format(timestampFormat)
-			case key == f.FieldMap.resolve(FieldKeyLevel):
-				value = entry.Level.String()
-			case key == f.FieldMap.resolve(FieldKeyMsg):
-				value = entry.Message
-			case key == f.FieldMap.resolve(FieldKeyLogrusError):
-				value = entry.err
-			case key == f.FieldMap.resolve(FieldKeyFunc) && entry.HasCaller():
-				value = funcVal
-			case key == f.FieldMap.resolve(FieldKeyFile) && entry.HasCaller():
-				value = fileVal
-			default:
-				value = data[key]
-			}
-			f.appendKeyValue(b, key, value)
-		}
-	}
-
+	f.print(b, entry, keys, data, timestampFormat, f.isColored())
 	b.WriteByte('\n')
 	return b.Bytes(), nil
 }
 
-func (f *TextFormatter) printColored(b *bytes.Buffer, entry *Entry, keys []string, data Fields, timestampFormat string) {
+func (f *TextFormatter) print(b *bytes.Buffer, entry *Entry, keys []string, data Fields, timestampFormat string, printColor bool) {
 	var levelColor int
 	switch entry.Level {
 	case DebugLevel, TraceLevel:
@@ -280,19 +256,36 @@ func (f *TextFormatter) printColored(b *bytes.Buffer, entry *Entry, keys []strin
 		}
 	}
 
-	switch {
-	case f.DisableTimestamp:
-		fmt.Fprintf(b, "\x1b[%dm%s\x1b[0m%s %-44s ", levelColor, levelText, caller, entry.Message)
-	case !f.FullTimestamp:
-		fmt.Fprintf(b, "\x1b[%dm%s\x1b[0m[%04d]%s %-44s ", levelColor, levelText, int(entry.Time.Sub(baseTimestamp)/time.Second), caller, entry.Message)
-	default:
-		fmt.Fprintf(b, "\x1b[%dm%s\x1b[0m[%s]%s %-44s ", levelColor, levelText, entry.Time.Format(timestampFormat), caller, entry.Message)
+	if printColor {
+		switch {
+		case f.DisableTimestamp:
+			fmt.Fprintf(b, "\x1b[%dm%s\x1b[0m%s %-44s ", levelColor, levelText, caller, entry.Message)
+		case !f.FullTimestamp:
+			fmt.Fprintf(b, "\x1b[%dm%s\x1b[0m[%04d]%s %-44s ", levelColor, levelText, int(entry.Time.Sub(baseTimestamp)/time.Second), caller, entry.Message)
+		default:
+			fmt.Fprintf(b, "\x1b[%dm%s\x1b[0m[%s]%s %-44s ", levelColor, levelText, entry.Time.Format(timestampFormat), caller, entry.Message)
+		}
+		for _, k := range keys {
+			v := data[k]
+			fmt.Fprintf(b, " \x1b[%dm%s\x1b[0m=", levelColor, k)
+			f.appendValue(b, v)
+		}
+	} else {
+		switch {
+		case f.DisableTimestamp:
+			fmt.Fprintf(b, "%s %s %-44s ", levelText, caller, entry.Message)
+		case !f.FullTimestamp:
+			fmt.Fprintf(b, "%s [%04d]%s %-44s ", levelText, int(entry.Time.Sub(baseTimestamp)/time.Second), caller, entry.Message)
+		default:
+			fmt.Fprintf(b, "%s [%s]%s %-44s ", levelText, entry.Time.Format(timestampFormat), caller, entry.Message)
+		}
+		for _, k := range keys {
+			v := data[k]
+			fmt.Fprintf(b, " %s=", k)
+			f.appendValue(b, v)
+		}
 	}
-	for _, k := range keys {
-		v := data[k]
-		fmt.Fprintf(b, " \x1b[%dm%s\x1b[0m=", levelColor, k)
-		f.appendValue(b, v)
-	}
+
 }
 
 func (f *TextFormatter) needsQuoting(text string) bool {
